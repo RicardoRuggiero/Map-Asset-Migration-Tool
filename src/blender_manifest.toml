@@ -1,0 +1,11 @@
+schema_version = "1.0.0"
+id = "io_scene_rsw"
+version = "1.0.0"
+name = "Ragnarok Online Format"
+tagline = "Importador de mapas e assets do Ragnarok"
+maintainer = "Brother"
+type = "add-on"
+build_date = "2026-07-31"
+license = ["SPDX:GPL-2.0-or-later"]
+tags = ["Import-Export"]
+blender_version_min = "4.2.0"

@@ -1,0 +1,222 @@
+import os
+import bpy
+import bpy_extras
+import bmesh
+import math
+from mathutils import Vector, Matrix, Quaternion
+from bpy.props import StringProperty, BoolProperty, FloatProperty
+from ..utils.utils import get_data_path
+from ..rsm.reader import RsmReader
+
+
+class RsmImportOptions(object):
+    def __init__(self, should_import_smoothing_groups:bool = True):
+        self.should_import_smoothing_groups = should_import_smoothing_groups
+
+class RSM_OT_ImportOperator(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
+    """This appears in the tooltip of the operator and in the generated docs"""
+    bl_idname = 'io_scene_rsw.rsm_import'  # important since its how bpy.ops.import_test.some_data is constructed
+    bl_label = 'Import Ragnarok Online RSM'
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+
+    filename_ext = ".rsm"
+
+    filter_glob: StringProperty(
+        default="*.rsm",
+        options={'HIDDEN'},
+        maxlen=255,  # Max internal buffer length, longer would be clamped.
+    )
+
+    should_import_smoothing_groups: BoolProperty(
+        default=True
+    )
+
+    @staticmethod
+    def import_rsm(filepath, options):
+        rsm = RsmReader.from_file(filepath)
+        name = os.path.basename(filepath)
+        data_path = get_data_path(filepath)
+        materials = []
+
+        collection = bpy.data.collections.new(name)
+        bpy.context.scene.collection.children.link(collection)
+
+        for texture_path in rsm.textures:
+            material = bpy.data.materials.new(texture_path)
+            # material.specular_intensity = 0.0  # Comentado pois é obsoleto
+            material.use_nodes = True
+            materials.append(material)
+
+            ''' Create texture. '''
+            bsdf = material.node_tree.nodes['Principled BSDF']
+            # Atualizado para a porta do Blender 4.0+ (a linha antiga do 'Specular' foi apagada)
+            bsdf.inputs['Specular IOR Level'].default_value = 0.0
+            
+            texImage = material.node_tree.nodes.new('ShaderNodeTexImage')
+            material.node_tree.links.new(bsdf.inputs['Base Color'], texImage.outputs['Color'])
+
+            ''' Load texture. '''
+            # Pega a pasta base cortando o caminho antes de chegar em '\model\'
+            base_dir = filepath.split('model')[0] if 'model' in filepath else os.path.dirname(filepath)
+            texpath = os.path.join(base_dir, 'texture', texture_path.replace('\\', os.sep))
+
+            try:
+                texImage.image = bpy.data.images.load(texpath, check_existing=True)
+            except RuntimeError:
+                print(f"Erro ao carregar textura do modelo: {texpath}")
+                pass
+
+        nodes = {}
+        for node in rsm.nodes:
+            mesh = bpy.data.meshes.new(node.name)
+            mesh_object = bpy.data.objects.new(os.path.relpath(filepath, data_path), mesh)
+
+            nodes[node.name] = mesh_object
+
+            if node.parent_name in nodes:
+                mesh_object.parent = nodes[node.parent_name]
+
+            ''' Add UV map to each material. '''
+            uv_layer = mesh.uv_layers.new()
+
+            bm = bmesh.new()
+            bm.from_mesh(mesh)
+
+            for texture_index in node.texture_indices:
+                mesh.materials.append(materials[texture_index])
+
+            for vertex in node.vertices:
+                bm.verts.new(vertex)
+
+            bm.verts.ensure_lookup_table()
+
+            '''
+            Build smoothing group face look-up-table.
+            '''
+            smoothing_group_faces = dict()
+            valid_faces = []
+            
+            for face_index, face in enumerate(node.faces):
+                try:
+                    bmface = bm.faces.new([bm.verts[x] for x in face.vertex_indices])
+                    bmface.material_index = face.texture_index
+                    valid_faces.append(face)
+                except ValueError as e:
+                    continue
+                    
+                if options.should_import_smoothing_groups:
+                    bmface.smooth = True
+                    if face.smoothing_group not in smoothing_group_faces:
+                        smoothing_group_faces[face.smoothing_group] = []
+                    smoothing_group_faces[face.smoothing_group].append(face_index)
+
+            bm.faces.ensure_lookup_table()
+            bm.to_mesh(mesh)
+            try:
+                bmface = bm.faces.new([bm.verts[x] for x in face.vertex_indices])
+                bmface.material_index = face.texture_index
+                valid_faces.append(face)
+            except ValueError as e:
+                continue
+                if options.should_import_smoothing_groups:
+                    bmface.smooth = True
+                    if face.smoothing_group not in smoothing_group_faces:
+                        smoothing_group_faces[face.smoothing_group] = []
+                    smoothing_group_faces[face.smoothing_group].append(face_index)
+
+            bm.faces.ensure_lookup_table()
+            bm.to_mesh(mesh)
+
+            '''
+            Assign texture coordinates.
+            '''
+            uv_texture = mesh.uv_layers[0]
+            for face_index, face in enumerate(valid_faces):
+                uvs = [node.texcoords[x] for x in face.texcoord_indices]
+                for i, uv in enumerate(uvs):
+                    # UVs have to be V-flipped (maybe)
+                    uv = uv[1:]
+                    uv = uv[0], 1.0 - uv[1]
+                    uv_texture.data[face_index * 3 + i].uv = uv
+
+            '''
+            Apply transforms.
+            '''
+            offset = Vector((node.offset[0], node.offset[2], node.offset[1] * -1.0))
+
+            if mesh_object.parent is None:
+                mesh_object.location = offset * -1
+            else:
+                mesh_object.location = offset
+
+            mesh_object.scale = node.scale
+
+            collection.objects.link(mesh_object)
+
+            '''
+            Apply smoothing groups.
+            '''
+            if options.should_import_smoothing_groups:
+                bpy.ops.object.select_all(action='DESELECT')
+                mesh_object.select_set(True)
+                bpy.context.view_layer.objects.active = mesh_object
+                for smoothing_group, face_indices in smoothing_group_faces.items():
+                    '''
+                    Select all faces in the smoothing group.
+                    '''
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                    for face_index in face_indices:
+                        mesh.polygons[face_index].select = True
+                    bpy.ops.object.mode_set(mode='EDIT')
+                    bpy.ops.mesh.select_mode(type='FACE')
+                    '''
+                    Mark boundary edges as sharp.
+                    '''
+                    bpy.ops.mesh.region_to_loop()
+                    bpy.ops.mesh.mark_sharp()
+                bpy.ops.object.mode_set(mode='OBJECT')
+                '''
+                Add edge split modifier.
+                '''
+                edge_split_modifier = mesh_object.modifiers.new('EdgeSplit', type='EDGE_SPLIT')
+                edge_split_modifier.use_edge_angle = False
+                edge_split_modifier.use_edge_sharp = True
+                bpy.ops.object.select_all(action='DESELECT')
+
+        main_node = nodes[rsm.main_node]
+        if main_node is not None:
+            # Fix: Anexa o objeto na coleção raiz temporariamente para forçar a visibilidade na View Layer
+            try:
+                bpy.context.scene.collection.objects.link(main_node)
+            except RuntimeError:
+                pass
+            
+            bpy.ops.object.select_all(action='DESELECT')
+            main_node.select_set(True)
+            bpy.context.view_layer.objects.active = main_node
+            
+            # Aplica rotação e escala zerando o pivô
+            bpy.ops.object.transform_apply(location=True, scale=True, rotation=True)
+            
+            main_node.select_set(False)
+            bpy.ops.object.select_all(action='DESELECT')
+            
+            # Remove da coleção raiz (o objeto continuará salvo dentro da coleção própria dele)
+            try:
+                bpy.context.scene.collection.objects.unlink(main_node)
+            except RuntimeError:
+                pass
+
+        return nodes[rsm.main_node]
+
+    def execute(self, context):
+        options = RsmImportOptions(
+            should_import_smoothing_groups=self.should_import_smoothing_groups
+        )
+        RSM_OT_ImportOperator.import_rsm(self.filepath, options)
+        return {'FINISHED'}
+
+    @staticmethod
+    def menu_func_import(self, context):
+        self.layout.operator(RSM_OT_ImportOperator.bl_idname, text='Ragnarok Online RSM (.rsm)')
