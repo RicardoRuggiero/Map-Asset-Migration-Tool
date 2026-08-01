@@ -2,6 +2,9 @@
 
 Este *add-on* para **Blender** permite a importação estruturada e o processamento de mapas e modelos tridimensionais (arquivos `.gnd`, `.rsm` e `.rsw`), lendo os dados brutos de relevo, instâncias e materiais para que possam ser manipulados nativamente no ambiente 3D e, posteriormente, exportados para os formatos OBJ, FBX ou glTF.
 
+<img width="1600" height="857" alt="image" src="https://github.com/user-attachments/assets/9c1c1e80-0c02-47d1-9988-fcd758e54568" />
+
+
 ## Principais Funcionalidades
 
 * **Leitura de Cenário (`.rsw`):** Orquestra a planta do mapa, posicionando instâncias de objetos, construções e propriedades do mundo nas coordenadas globais exatas.
