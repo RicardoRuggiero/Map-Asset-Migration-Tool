@@ -25,6 +25,6 @@ Este projeto encontra-se em fase ativa de refatoração e desenvolvimento. Para 
 
 ### Licença e Créditos
 
-*Modificado e atualizado* para o Blender 5.1+ por Ricardo Ruggiero. Baseado no trabalho *original* de Colin Basnett sob a licença MIT. 
+*Modificado e atualizado* para o Blender 5.1+ por [Ricardo Ruggiero](https://github.com/RicardoRuggiero). Baseado no trabalho *original* de Colin Basnett sob a licença MIT. 
 
 **Nota sobre o contato com o autor original:** Houve uma tentativa de comunicação com o criador original deste projeto utilizando o único canal disponibilizado publicamente por ele. No entanto, o perfil não aceita solicitações de contato e sua atividade encontra-se restrita/privada na plataforma (*"@cmbasnett's activity is private"*). Em absoluto respeito à sua privacidade e aos limites da comunidade open-source, optou-se por não buscar meios alternativos de contato pela internet, evitando qualquer abordagem invasiva.
