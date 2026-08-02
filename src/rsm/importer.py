@@ -149,8 +149,8 @@ class RSM_OT_ImportOperator(bpy.types.Operator, bpy_extras.io_utils.ImportHelper
                 mesh_object.location = offset * -1
             else:
                 mesh_object.location = offset
-
-            mesh_object.scale = node.scale
+            # Corrige a proporção mapeando Y (altura do RO) para Z e Z (profundidade do RO) para Y
+            mesh_object.scale = (node.scale[0], node.scale[2], node.scale[1])
 
             collection.objects.link(mesh_object)
 
