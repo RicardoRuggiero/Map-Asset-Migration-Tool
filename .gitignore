@@ -26,3 +26,4 @@ venv.bak/
 .python-version
 .mypy_cache/
 .idea
+debug.log
